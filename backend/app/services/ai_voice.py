@@ -1,133 +1,98 @@
-"""AI Voice Generation Service."""
+"""AI Voice generation service."""
 
-from typing import Dict, Optional, List
-from enum import Enum
-from dataclasses import dataclass
-import aiohttp
+import logging
+from typing import Optional, Dict, List
 import asyncio
-import io
+import uuid
 
-
-class VoiceProvider(Enum):
-    """Voice generation providers."""
-    ELEVENLABS = "elevenlabs"
-    OPENAI = "openai"
-    AZURE = "azure"
-    GOOGLE = "google"
-
-
-@dataclass
-class VoiceConfig:
-    """Voice configuration."""
-    provider: VoiceProvider
-    voice_id: str
-    stability: float = 0.75
-    clarity: float = 0.75
-    style: float = 0.0
-    speed: float = 1.0
+logger = logging.getLogger(__name__)
 
 
 class AIVoiceService:
-    """AI Voice Generation Service with multiple providers."""
+    """Service for AI voice synthesis and management."""
     
     def __init__(self):
-        self.providers = {
-            VoiceProvider.ELEVENLABS: self._elevenlabs_generate,
-            VoiceProvider.OPENAI: self._openai_generate,
-            VoiceProvider.AZURE: self._azure_generate,
-            VoiceProvider.GOOGLE: self._google_generate,
+        self.voices: Dict[str, Dict] = {}
+        self._load_default_voices()
+    
+    def _load_default_voices(self):
+        """Load default voice options."""
+        self.voices = {
+            "professional-male": {
+                "name": "Professional Male",
+                "language": "en",
+                "gender": "male",
+                "accent": "american",
+                "provider": "elevenlabs",
+                "provider_id": "21m00Tcm4TlvDq8ikWAM"
+            },
+            "professional-female": {
+                "name": "Professional Female",
+                "language": "en",
+                "gender": "female",
+                "accent": "american",
+                "provider": "elevenlabs",
+                "provider_id": "EXAVITQu4vr4xnSDxMaL"
+            },
+            "british-male": {
+                "name": "British Male",
+                "language": "en",
+                "gender": "male",
+                "accent": "british",
+                "provider": "elevenlabs",
+                "provider_id": "onwK4e9ZLuTAKbL1dQrM"
+            },
+            "british-female": {
+                "name": "British Female",
+                "language": "en",
+                "gender": "female",
+                "accent": "british",
+                "provider": "elevenlabs",
+                "provider_id": "pMsXgVXv3BLzUgSXRplE"
+            },
         }
     
-    async def generate_speech(
-        self, 
-        text: str, 
-        provider: str = "elevenlabs",
-        voice_id: str = "default",
-        **kwargs
-    ) -> bytes:
-        """Generate speech from text."""
+    async def synthesize_speech(
+        self,
+        text: str,
+        voice_id: str
+    ) -> str:
+        """Synthesize speech from text."""
+        if voice_id not in self.voices:
+            raise ValueError(f"Voice {voice_id} not found")
         
-        config = VoiceConfig(
-            provider=VoiceProvider(provider),
-            voice_id=voice_id,
-            **kwargs
-        )
+        logger.info(f"Synthesizing speech with voice {voice_id}")
         
-        # Route to appropriate provider
-        generator = self.providers.get(config.provider)
-        if not generator:
-            raise ValueError(f"Unsupported provider: {config.provider}")
-        
-        return await generator(text, config)
+        try:
+            # Simulate voice synthesis
+            await asyncio.sleep(len(text) / 500)  # Simulate processing time
+            
+            audio_url = f"s3://faceless-platform-uploads/audio/{uuid.uuid4()}.mp3"
+            logger.info(f"Speech synthesized: {audio_url}")
+            return audio_url
+        except Exception as e:
+            logger.error(f"Error synthesizing speech: {str(e)}")
+            raise
     
-    async def _elevenlabs_generate(self, text: str, config: VoiceConfig) -> bytes:
-        """Generate speech using ElevenLabs API."""
-        url = f"https://api.elevenlabs.io/v1/text-to-speech/{config.voice_id}"
+    def get_available_voices(self) -> List[Dict]:
+        """Get list of available voices."""
+        return list(self.voices.values())
+    
+    def get_voice(self, voice_id: str) -> Optional[Dict]:
+        """Get specific voice details."""
+        return self.voices.get(voice_id)
+    
+    async def batch_synthesize(
+        self,
+        texts: List[str],
+        voice_id: str
+    ) -> List[str]:
+        """Synthesize multiple texts in batch."""
+        logger.info(f"Batch synthesizing {len(texts)} texts")
         
-        headers = {
-            "Accept": "audio/mpeg",
-            "Content-Type": "application/json",
-            "xi-api-key": "YOUR_API_KEY"  # From settings
-        }
+        tasks = [
+            self.synthesize_speech(text, voice_id)
+            for text in texts
+        ]
         
-        data = {
-            "text": text,
-            "model_id": "eleven_monolingual_v1",
-            "voice_settings": {
-                "stability": config.stability,
-                "similarity_boost": config.clarity,
-                "style": config.style,
-                "use_speaker_boost": True
-            }
-        }
-        
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=data, headers=headers) as response:
-                if response.status == 200:
-                    return await response.read()
-                else:
-                    raise Exception(f"ElevenLabs API error: {response.status}")
-    
-    async def _openai_generate(self, text: str, config: VoiceConfig) -> bytes:
-        """Generate speech using OpenAI TTS."""
-        # Implementation for OpenAI TTS
-        # This is a placeholder - implement actual OpenAI TTS integration
-        await asyncio.sleep(0.1)  # Simulate API call
-        return b"Mock OpenAI audio data"
-    
-    async def _azure_generate(self, text: str, config: VoiceConfig) -> bytes:
-        """Generate speech using Azure Cognitive Services."""
-        # Implementation for Azure TTS
-        await asyncio.sleep(0.1)  # Simulate API call
-        return b"Mock Azure audio data"
-    
-    async def _google_generate(self, text: str, config: VoiceConfig) -> bytes:
-        """Generate speech using Google Cloud TTS."""
-        # Implementation for Google Cloud TTS
-        await asyncio.sleep(0.1)  # Simulate API call
-        return b"Mock Google audio data"
-    
-    async def get_available_voices(self, provider: str = "elevenlabs") -> List[Dict]:
-        """Get available voices for a provider."""
-        # Mock voice list - implement actual API calls
-        voices = {
-            "elevenlabs": [
-                {"id": "21m00Tcm4TlvDq8ikWAM", "name": "Rachel", "category": "premade"},
-                {"id": "AZnzlk1XvdvUeBnXmlld", "name": "Domi", "category": "premade"},
-                {"id": "EXAVITQu4vr4xnSDxMaL", "name": "Bella", "category": "premade"}
-            ],
-            "openai": [
-                {"id": "alloy", "name": "Alloy", "category": "standard"},
-                {"id": "echo", "name": "Echo", "category": "standard"},
-                {"id": "fable", "name": "Fable", "category": "standard"}
-            ]
-        }
-        
-        return voices.get(provider, [])
-    
-    async def clone_voice(self, audio_samples: List[bytes], voice_name: str) -> str:
-        """Clone a voice from audio samples."""
-        # Voice cloning implementation
-        # This would typically involve training or using instant voice cloning APIs
-        voice_id = f"custom_{voice_name.lower()}_{len(audio_samples)}"
-        return voice_id
+        return await asyncio.gather(*tasks)

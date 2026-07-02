@@ -1,139 +1,94 @@
-"""Content Creation Pipeline Service."""
+"""Content pipeline service for processing content."""
 
-from typing import Dict, List, Optional
-from dataclasses import dataclass
-from enum import Enum
+import logging
+from typing import Optional, Dict, Any
 import asyncio
+from datetime import datetime
 import uuid
 
-from app.services.ai_voice import AIVoiceService
-from app.services.video_templates import VideoTemplateService
-from app.services.moderation import ModerationService
-
-
-class ContentStatus(Enum):
-    """Content processing status."""
-    PENDING = "pending"
-    PROCESSING = "processing"
-    COMPLETED = "completed"
-    FAILED = "failed"
-
-
-@dataclass
-class ContentRequest:
-    """Content creation request."""
-    id: str
-    user_id: str
-    script: str
-    template_id: str
-    voice_config: Dict
-    output_format: str = "mp4"
-    status: ContentStatus = ContentStatus.PENDING
+logger = logging.getLogger(__name__)
 
 
 class ContentPipeline:
-    """Automated content creation pipeline."""
+    """Service for processing content through the pipeline."""
     
     def __init__(self):
-        self.voice_service = AIVoiceService()
-        self.template_service = VideoTemplateService()
-        self.moderation_service = ModerationService()
-        self.active_jobs: Dict[str, ContentRequest] = {}
+        self.status = "initialized"
     
-    async def create_content(
-        self, 
-        user_id: str, 
-        script: str, 
-        template_id: str, 
-        voice_config: Dict
-    ) -> str:
-        """Create new content request."""
+    async def process_content(
+        self,
+        content_id: str,
+        script: str,
+        template_id: str,
+        voice_id: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """Process content through the full pipeline."""
+        logger.info(f"Processing content {content_id}")
         
-        # Content moderation
-        moderation_result = await self.moderation_service.moderate_text(script)
-        if not moderation_result.is_safe:
-            raise ValueError(f"Content flagged: {moderation_result.reason}")
-        
-        # Create job
-        job_id = str(uuid.uuid4())
-        request = ContentRequest(
-            id=job_id,
-            user_id=user_id,
-            script=script,
-            template_id=template_id,
-            voice_config=voice_config
-        )
-        
-        self.active_jobs[job_id] = request
-        
-        # Process asynchronously
-        asyncio.create_task(self._process_content(request))
-        
-        return job_id
-    
-    async def _process_content(self, request: ContentRequest):
-        """Process content creation request."""
         try:
-            request.status = ContentStatus.PROCESSING
+            # Step 1: Parse script
+            parsed_script = await self._parse_script(script)
+            logger.info(f"Script parsed for {content_id}")
             
-            # Step 1: Generate voice
-            audio_file = await self.voice_service.generate_speech(
-                text=request.script,
-                **request.voice_config
-            )
+            # Step 2: Generate voice (if voice_id provided)
+            voice_url = None
+            if voice_id:
+                voice_url = await self._generate_voice(parsed_script, voice_id)
+                logger.info(f"Voice generated for {content_id}")
             
-            # Step 2: Apply video template
-            video_file = await self.template_service.create_video(
-                template_id=request.template_id,
-                audio_file=audio_file,
-                script=request.script
-            )
+            # Step 3: Create video from template
+            video_url = await self._create_video(template_id, parsed_script, voice_url)
+            logger.info(f"Video created for {content_id}")
             
-            # Step 3: Final processing
-            final_video = await self._finalize_video(video_file, request)
+            # Step 4: Generate thumbnail
+            thumbnail_url = await self._generate_thumbnail(video_url)
+            logger.info(f"Thumbnail generated for {content_id}")
             
-            request.status = ContentStatus.COMPLETED
-            
-            # Notify completion (webhook, database update, etc.)
-            await self._notify_completion(request, final_video)
-            
+            return {
+                "status": "success",
+                "content_id": content_id,
+                "video_url": video_url,
+                "thumbnail_url": thumbnail_url,
+                "voice_url": voice_url,
+                "duration": 120  # placeholder
+            }
         except Exception as e:
-            request.status = ContentStatus.FAILED
-            await self._handle_error(request, str(e))
+            logger.error(f"Error processing content {content_id}: {str(e)}")
+            return {
+                "status": "failed",
+                "content_id": content_id,
+                "error": str(e)
+            }
     
-    async def _finalize_video(self, video_file: str, request: ContentRequest) -> str:
-        """Final video processing steps."""
-        # Add watermark, optimize, upload to storage, etc.
-        return video_file
-    
-    async def _notify_completion(self, request: ContentRequest, video_file: str):
-        """Notify user of completion."""
-        # Send webhook, email, push notification, etc.
-        pass
-    
-    async def _handle_error(self, request: ContentRequest, error: str):
-        """Handle processing errors."""
-        # Log error, notify user, cleanup, etc.
-        pass
-    
-    async def get_job_status(self, job_id: str) -> Dict:
-        """Get job processing status."""
-        if job_id not in self.active_jobs:
-            raise ValueError("Job not found")
-        
-        job = self.active_jobs[job_id]
+    async def _parse_script(self, script: str) -> Dict[str, Any]:
+        """Parse script into segments."""
+        await asyncio.sleep(0.1)  # Simulate processing
         return {
-            "id": job.id,
-            "status": job.status.value,
-            "progress": self._calculate_progress(job)
+            "segments": script.split("\n"),
+            "word_count": len(script.split()),
+            "estimated_duration": len(script.split()) // 130  # ~130 words per minute
         }
     
-    def _calculate_progress(self, job: ContentRequest) -> int:
-        """Calculate job progress percentage."""
-        status_progress = {
-            ContentStatus.PENDING: 0,
-            ContentStatus.PROCESSING: 50,
-            ContentStatus.COMPLETED: 100,
-            ContentStatus.FAILED: 0
-        }
-        return status_progress.get(job.status, 0)
+    async def _generate_voice(
+        self,
+        parsed_script: Dict[str, Any],
+        voice_id: str
+    ) -> str:
+        """Generate voice from script."""
+        await asyncio.sleep(0.2)  # Simulate voice generation
+        return f"s3://faceless-platform-uploads/voice/{uuid.uuid4()}.mp3"
+    
+    async def _create_video(
+        self,
+        template_id: str,
+        parsed_script: Dict[str, Any],
+        voice_url: Optional[str]
+    ) -> str:
+        """Create video from template."""
+        await asyncio.sleep(0.3)  # Simulate video creation
+        return f"s3://faceless-platform-uploads/videos/{uuid.uuid4()}.mp4"
+    
+    async def _generate_thumbnail(self, video_url: str) -> str:
+        """Generate thumbnail from video."""
+        await asyncio.sleep(0.1)  # Simulate thumbnail generation
+        return f"s3://faceless-platform-uploads/thumbnails/{uuid.uuid4()}.jpg"
